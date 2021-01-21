@@ -156,8 +156,8 @@ public class RdbSyncService {
             String tmpSql = "`" + ddl.getDatabase() + "`.";
             String resultSql = ddl.getSql().replace(tmpSql, "");
             statement.execute(resultSql);
-            if (logger.isTraceEnabled()) {
-                logger.trace("Execute DDL sql: {} for database: {}", ddl.getSql(), ddl.getDatabase());
+            if (logger.isDebugEnabled()) {
+                logger.debug("Execute DDL sql: {} for database: {}", ddl.getSql(), ddl.getDatabase());
             }
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -172,6 +172,24 @@ public class RdbSyncService {
      */
     public void sync(Map<String, Map<String, MappingConfig>> mappingConfig, List<Dml> dmls, Properties envProperties) {
         sync(dmls, dml -> {
+            String destination = StringUtils.trimToEmpty(dml.getDestination());
+            String groupId = StringUtils.trimToEmpty(dml.getGroupId());
+            String database = dml.getDatabase();
+            String table = dml.getTable();
+            Map<String, MappingConfig> configMap;
+            if (envProperties != null && !"tcp".equalsIgnoreCase(envProperties.getProperty("canal.conf.mode"))) {
+                configMap = mappingConfig.get(destination + "-" + groupId + "_" + database + "-" + table);
+            } else {
+                configMap = mappingConfig.get(destination + "_" + database + "-" + table);
+            }
+
+            if (configMap == null) {
+                return false;
+            }
+
+            if (configMap.values().isEmpty()) {
+                return false;
+            }
             if (dml.getIsDdl() != null && dml.getIsDdl() && StringUtils.isNotEmpty(dml.getSql()) && dml.getSql().toLowerCase().startsWith("alter")) {
                 // DDL
                 executeDdl(dml);
@@ -179,25 +197,6 @@ public class RdbSyncService {
                 return false;
             } else {
                 // DML
-                String destination = StringUtils.trimToEmpty(dml.getDestination());
-                String groupId = StringUtils.trimToEmpty(dml.getGroupId());
-                String database = dml.getDatabase();
-                String table = dml.getTable();
-                Map<String, MappingConfig> configMap;
-                if (envProperties != null && !"tcp".equalsIgnoreCase(envProperties.getProperty("canal.conf.mode"))) {
-                    configMap = mappingConfig.get(destination + "-" + groupId + "_" + database + "-" + table);
-                } else {
-                    configMap = mappingConfig.get(destination + "_" + database + "-" + table);
-                }
-
-                if (configMap == null) {
-                    return false;
-                }
-
-                if (configMap.values().isEmpty()) {
-                    return false;
-                }
-
                 for (MappingConfig config : configMap.values()) {
                     if (config.getConcurrent()) {
                         List<SingleDml> singleDmls = SingleDml.dml2SingleDmls(dml);
